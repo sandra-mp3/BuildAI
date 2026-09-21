@@ -1,0 +1,151 @@
+# CI.YML — the automated "quality gate" that runs on every change
+# --------------------------------------------------------------------
+# This file tells GitHub Actions (GitHub's built-in automation service)
+# exactly what to check every single time someone pushes code or opens a
+# pull request. Nothing here needs a human to remember to run it by hand —
+# that's the whole point. If any step fails, the change is flagged as
+# broken before it can be merged, which is what "quality gate" means: code
+# genuinely cannot get in unless it passes.
+#
+# I organized this into five jobs, each answering a different question:
+#   secrets   — did anyone accidentally commit a password or API key?
+#   web       — does the front end still build, and do its tests pass?
+#   api       — does the backend still build, and do its tests pass?
+#   e2e       — do real, whole user journeys (Playwright) still work?
+#   audit     — are any of our dependencies known to be insecure?
+# They run in parallel where possible, so the whole pipeline finishes
+# quickly instead of waiting on one long, single list of steps.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------
+  # SECRET SCANNING
+  # A "secret" here means something like an API key, password, or private
+  # token. Accidentally committing one of these into source control is one
+  # of the most common — and most damaging — mistakes in real software
+  # projects, because once it's pushed, it can be considered compromised
+  # even if it's deleted in a later commit (git remembers history). This
+  # job scans every file changed in the pull request and fails the whole
+  # pipeline immediately if it finds a pattern that looks like a real
+  # secret, before a human reviewer even has to notice it by eye.
+  # ---------------------------------------------------------------------
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for accidentally committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  web:
+    name: Web — lint, type-check, unit tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package.json
+      - run: npm install
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  api:
+    name: API — test & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      # A real, throwaway PostgreSQL database that only exists for the
+      # length of this CI run — the API's tests can talk to something
+      # real without needing any external, persistent infrastructure.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: buildai
+          POSTGRES_PASSWORD: buildai
+          POSTGRES_DB: buildai
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U buildai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://buildai:buildai@localhost:5432/buildai
+      DIRECT_URL: postgresql://buildai:buildai@localhost:5432/buildai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/api/package.json
+      - run: npm install
+      - run: npx prisma generate
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: Playwright e2e (real user journeys)
+    runs-on: ubuntu-latest
+    needs: [web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - working-directory: apps/web
+        run: npm install
+      - run: npm install --prefix . @playwright/test
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --config=e2e/playwright.config.ts
+
+  # ---------------------------------------------------------------------
+  # DEPENDENCY SECURITY SCANNING
+  # Almost none of this project's code was written entirely from scratch —
+  # like virtually every modern app, it's built on top of hundreds of
+  # small, third-party packages (things like React, NestJS, and Firebase's
+  # own libraries). Any one of those could have a known security flaw
+  # discovered after I first installed it. `npm audit` checks every
+  # package against a public database of known vulnerabilities and reports
+  # what it finds. I run it here, on both apps, so a newly-discovered
+  # problem becomes visible in CI right away instead of being missed.
+  #
+  # This step is intentionally set to report rather than hard-fail the
+  # whole pipeline (`|| true`), because a brand-new "high" severity report
+  # in some deep, indirect dependency shouldn't instantly block every
+  # unrelated change — see SECURITY.md for how I actually triage and act
+  # on what this step finds.
+  # ---------------------------------------------------------------------
+  audit:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Audit web dependencies
+        working-directory: apps/web
+        run: npm install --no-audit --no-fund && npm audit --audit-level=high || true
+      - name: Audit API dependencies
+        working-directory: apps/api
+        run: npm install --no-audit --no-fund && npm audit --audit-level=high || true

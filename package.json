@@ -1,0 +1,14 @@
+{
+  "name": "buildai",
+  "private": true,
+  "version": "1.0.0",
+  "description": "BuildAI — an AI application builder. Describe it, forge it, ship it.",
+  "scripts": {
+    "dev:web": "npm run dev --prefix apps/web",
+    "dev:api": "npm run start:dev --prefix apps/api",
+    "test:e2e": "playwright test --config=e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.45.3"
+  }
+}

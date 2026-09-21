@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand palette — dusty rose (primary, formerly "violet" token name — kept
+   for minimal diff), army green (secondary, "indigo" token name), warm gold
+   ("seam" — the signature generation-in-progress accent), and a burgundy-red
+   for errors. No purple anywhere in the palette. */
+:root {
+  --bg: 30 20% 98%;
+  --bg-panel: 0 0% 100%;
+  --bg-elevated: 30 25% 96.5%;
+  --bg-inset: 30 20% 94%;
+  --border: 20 15% 88%;
+  --border-strong: 20 12% 78%;
+  --fg: 20 15% 10%;
+  --fg-muted: 20 8% 38%;
+  --fg-subtle: 20 6% 54%;
+  --violet: 340 62% 48%;
+  --violet-fg: 0 0% 100%;
+  --violet-muted: 340 45% 50%;
+  --indigo: 90 28% 30%;
+  --seam: 40 85% 44%;
+  --success: 150 40% 32%;
+  --error: 352 58% 42%;
+}
+
+.dark {
+  --bg: 20 12% 5%;
+  --bg-panel: 20 10% 7.5%;
+  --bg-elevated: 20 9% 10.5%;
+  --bg-inset: 20 14% 3.5%;
+  --border: 20 8% 17%;
+  --border-strong: 20 8% 26%;
+  --fg: 30 20% 97%;
+  --fg-muted: 25 8% 65%;
+  --fg-subtle: 25 6% 44%;
+  --violet: 340 70% 72%;
+  --violet-fg: 20 15% 10%;
+  --violet-muted: 340 50% 62%;
+  --indigo: 90 30% 55%;
+  --seam: 40 88% 62%;
+  --success: 150 40% 52%;
+  --error: 352 65% 62%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: hsl(var(--bg));
+  color: hsl(var(--fg));
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+::selection {
+  background-color: hsl(var(--violet) / 0.3);
+}
+
+/* Scrollbars — thin, unobtrusive, matches dev-tool feel */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-strong));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--fg-subtle));
+  background-clip: padding-box;
+}
+
+/* Signature element — "The Seam": a molten weld-line that marks active AI generation.
+   Used on progress edges, generation indicators, and the landing hero. */
+.seam-line {
+  height: 2px;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--seam) / 0.15) 15%,
+    hsl(var(--seam)) 45%,
+    hsl(var(--violet)) 55%,
+    hsl(var(--seam) / 0.15) 85%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: seam-travel 2.4s linear infinite;
+}
+
+.forge-focus-ring:focus-visible {
+  outline: 2px solid hsl(var(--violet));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Draggable panel dividers — workspace explorer/editor/preview/chat */
+.resize-handle-x {
+  width: 4px;
+  flex-shrink: 0;
+  background: hsl(var(--border));
+  position: relative;
+  cursor: col-resize;
+  transition: background-color 0.15s ease;
+}
+.resize-handle-x:hover,
+.resize-handle-x[data-resize-handle-active] {
+  background: hsl(var(--violet) / 0.6);
+}
+.resize-handle-x::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+.resize-handle-y {
+  height: 4px;
+  flex-shrink: 0;
+  background: hsl(var(--border));
+  position: relative;
+  cursor: row-resize;
+  transition: background-color 0.15s ease;
+}
+.resize-handle-y:hover,
+.resize-handle-y[data-resize-handle-active] {
+  background: hsl(var(--violet) / 0.6);
+}
+.resize-handle-y::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Manual override toggled from Preferences, independent of the OS setting */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

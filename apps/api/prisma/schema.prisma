@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// The database is hosted on Supabase, connected through two different
+// URLs for two different jobs:
+//   DATABASE_URL — the pooled "transaction mode" connection (port 6543),
+//     used for everything the running app itself does day-to-day. A
+//     connection pooler lets many short-lived requests share a small
+//     number of real database connections efficiently.
+//   DIRECT_URL   — a direct, unpooled connection (port 5432), used only
+//     when running schema migrations. Prisma's migration tool needs
+//     certain database features ("prepared statements") that transaction
+//     poolers deliberately don't support, so migrations bypass the pooler
+//     entirely and talk to the database directly instead.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Framework {
+  NEXT_REACT
+  REACT_VITE
+  STATIC_HTML
+}
+
+enum ProjectStatus {
+  READY
+  GENERATING
+  ERROR
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// The four billing cycles offered on the pricing page. Kept as an enum
+// (a fixed, named list of allowed values) rather than a free-text string
+// so the database itself refuses to store an invalid plan name.
+enum PlanId {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  YEARLY
+}
+
+// Which payment rail was used to pay for a given subscription. A person
+// could reasonably switch providers between renewals (e.g. pay by card
+// one cycle, by M-Pesa the next), so this lives on the Subscription record
+// itself rather than being a fixed property of the User.
+enum PaymentProvider {
+  STRIPE
+  MPESA
+}
+
+enum SubscriptionStatus {
+  // A checkout was started but payment hasn't been confirmed yet.
+  INCOMPLETE
+  ACTIVE
+  // Stripe reports a renewal payment failed, but hasn't fully canceled yet.
+  PAST_DUE
+  CANCELED
+}
+
+model User {
+  id        String    @id @default(uuid())
+  firebaseUid String  @unique
+  email     String    @unique
+  name      String?
+  createdAt DateTime  @default(now())
+  projects  Project[]
+  // A user has at most one active subscription record at a time — see
+  // billing.service.ts for how upgrading/renewing updates this one row
+  // rather than creating a new one each time.
+  subscription Subscription?
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  description String
+  framework   Framework     @default(NEXT_REACT)
+  status      ProjectStatus @default(READY)
+  accentHue   Int           @default(262)
+  ownerId     String
+  owner       User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  files       ProjectFile[]
+  versions    ProjectVersion[]
+  messages    ChatMessage[]
+  envVars     EnvVar[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([ownerId])
+}
+
+model ProjectFile {
+  id        String   @id @default(uuid())
+  path      String
+  content   String   @db.Text
+  language  String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, path])
+}
+
+model ProjectVersion {
+  id          String   @id @default(uuid())
+  number      Int
+  label       String
+  description String   @db.Text
+  snapshot    Json
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([projectId, number])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  role      ChatRole
+  content   String   @db.Text
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model EnvVar {
+  id        String  @id @default(uuid())
+  key       String
+  value     String  @db.Text
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, key])
+}
+
+// One row per user, tracking whichever subscription they currently have
+// (or most recently had). I don't create a new row every renewal — I
+// update this same row's `status` and `currentPeriodEnd`, and keep a
+// separate, permanent log of individual payments in PaymentEvent below,
+// the same way a bank keeps one "account balance" but a full list of
+// individual transactions underneath it.
+model Subscription {
+  id       String @id @default(uuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  plan     PlanId
+  provider PaymentProvider
+  status   SubscriptionStatus @default(INCOMPLETE)
+
+  // When the currently-paid-for period ends. After this date, access
+  // should be treated as expired until the next successful payment.
+  currentPeriodEnd DateTime?
+
+  // Stripe-specific identifiers, used to look this subscription back up
+  // when Stripe sends a webhook event, and to let someone manage their
+  // billing details through Stripe's own hosted portal.
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+
+  // M-Pesa's own reference for the most recent STK Push request, used to
+  // match an incoming callback back to the right subscription — M-Pesa
+  // doesn't have a persistent "customer ID" the way Stripe does.
+  mpesaCheckoutRequestId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// A permanent, append-only record of every individual payment attempt —
+// kept even after a subscription is canceled or upgraded, since this is
+// exactly the kind of history a real business (and a real user asking
+// "what was I charged and when?") needs to be able to look back on.
+model PaymentEvent {
+  id       String          @id @default(uuid())
+  userId   String
+  plan     PlanId
+  provider PaymentProvider
+  amountCents Int
+  currency String // "USD" for Stripe, "KES" for M-Pesa
+  status   String // "succeeded" | "failed" | "pending"
+  providerReference String? // Stripe payment intent id, or M-Pesa receipt number
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
