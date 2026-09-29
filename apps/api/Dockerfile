@@ -1,4 +1,5 @@
 FROM node:20-alpine AS base
+RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
 
 FROM base AS deps
@@ -13,6 +14,7 @@ RUN npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
+RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
