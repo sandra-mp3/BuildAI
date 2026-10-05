@@ -29,12 +29,12 @@
  * Stripe and M-Pesa, so those calls always go through this file.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://buildai-api-qwd9.onrender.com";
 
 async function request<T>(path: string, init?: RequestInit, idToken?: string | null): Promise<T> {
   let res: Response;
-  try {
-    res = await fetch(`${API_URL}${path}`, {
+  try { 
+  res = await fetch(`${API_URL}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
