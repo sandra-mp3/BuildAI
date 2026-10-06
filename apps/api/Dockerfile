@@ -3,22 +3,24 @@ RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /v
 WORKDIR /app
 
 FROM base AS deps
-COPY apps/api/package*.json ./
+COPY package*.json ./
 RUN npm install
 
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
-COPY apps/api .
+COPY . .
 RUN npx prisma generate
 RUN npm run build
 
 FROM base AS runner
-ENV NODE_ENV=production
-RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
+ENV NODE_ENV=production
+
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package*.json ./
+# If prisma is needed at runtime for migrations/client:
 COPY --from=build /app/prisma ./prisma
-COPY --from=build /app/package.json ./package.json
+
 EXPOSE 4000
-CMD ["sh", "-c", "if [ -f dist/main.js ]; then node dist/main.js; else node dist/src/main.js; fi"]
+CMD ["node", "dist/main.js"]
